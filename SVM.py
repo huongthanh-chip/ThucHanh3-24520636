@@ -1,7 +1,5 @@
 import numpy as np
-import cv2
-import os
-from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 class SVM:
@@ -13,12 +11,14 @@ class SVM:
         self.b = None
         self.history_loss = []
 
-    def fit(self, X, y):
+    def fit(self, X, y, verbose=True, log_every=50):
         n_samples, n_features = X.shape
         self.w = np.zeros(n_features)
-        self.b = 0
+        self.b = 0.0
+        self.history_loss = []
+        epoch_pbar = tqdm(range(1, self.n_iters + 1), desc="Training SVM", disable=not verbose)
 
-        for _ in range(self.n_iters):
+        for epoch in epoch_pbar:
             for idx, x_i in enumerate(X):
                 # y_hat ở đây chính là: np.dot(x_i, self.w) + self.b
                 # Đây là giá trị dự đoán thô (raw score)
@@ -29,16 +29,27 @@ class SVM:
                     self.w -= self.lr * (2 * self.lambda_param * self.w)
                 else:
                     # Đạo hàm phần Hinge Loss + Regularization
-                    self.w -= self.lr * (2 * self.lambda_param * self.w - np.outer(y[idx], x_i).flatten())
-                    self.b -= self.lr * (-y[idx])
+                    self.w -= self.lr * (2 * self.lambda_param * self.w - y[idx] * x_i)
+                    self.b += self.lr * y[idx]
             
             # Tính loss tổng sau mỗi epoch để theo dõi
             current_loss = self.loss_fn(X, y)
             self.history_loss.append(current_loss)
 
+            if verbose and epoch % log_every == 0:
+                train_pred = self.predict(X)
+                train_acc = np.mean(train_pred == y)
+                # set_postfix sẽ đẩy thông tin ra phía sau thanh progress
+                epoch_pbar.set_postfix({
+                    "loss": f"{current_loss:.4f}",
+                    "acc": f"{train_acc:.4f}"
+                })
+
     def predict(self, X):
         approx = np.dot(X, self.w) + self.b
-        return np.sign(approx)
+        y_hat = np.sign(approx)
+        y_hat[y_hat == 0] = 1
+        return y_hat
     
     def loss_fn(self, X, y):
         # y_hat = w.X + b (giá trị dự đoán thô)
@@ -49,3 +60,14 @@ class SVM:
         hinge_term = np.mean(np.maximum(0, 1 - y * y_hat))
         return reg_term + hinge_term
     
+    def evaluate(self, y, y_hat) -> dict:
+        accuracy = np.mean(y == y_hat)
+        precision = precision_score(y, y_hat, average='weighted', zero_division=0)
+        recall = recall_score(y, y_hat, average='weighted', zero_division=0)
+        f1 = f1_score(y, y_hat, average='weighted', zero_division=0)
+        return {
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1': f1
+        }
